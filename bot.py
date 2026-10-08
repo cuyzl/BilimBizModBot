@@ -1,9 +1,11 @@
+import threading
 from datetime import datetime, timedelta, timezone
 
 from assistant import (
     get_assistant_handler,
     load_assistant_data,
     handle_stale_assistant_button,
+    auto_refresh_kb
 )
 
 from telegram import Update, ChatPermissions
@@ -379,6 +381,13 @@ def main():
     load_assistant_data()
 
     print("Knowledge Base готова.")
+
+    threading.Thread(
+    target=auto_refresh_kb,
+    daemon=True,
+    ).start()
+
+    print("Автоматическое обновление Knowledge Base включено.")
     
     print("BilimBiz Moderator запущен.")
 

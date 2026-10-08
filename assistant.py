@@ -1,5 +1,7 @@
 import asyncio
 import re
+import threading
+import time
 
 from telegram import (
     Update,
@@ -33,7 +35,7 @@ GRADE, TOPIC, TOPIC_MENU, QUESTION = range(4)
 
 documents_cache = None
 chunks_cache = None
-
+cache_lock = threading.Lock()
 
 # --------------------------------------------------
 # ТЕМЫ
@@ -157,74 +159,89 @@ TOPIC_KEYBOARD = InlineKeyboardMarkup(
 # ЗАГРУЗКА GOOGLE DRIVE
 # --------------------------------------------------
 
-def load_assistant_data():
+def load_assistant_data(force=False):
     global documents_cache
     global chunks_cache
 
-    if documents_cache is not None:
-        return
+    with cache_lock:
 
-    print(
-        "📚 Загружаю материалы BilimBiz..."
-    )
-
-    documents = load_folder(
-        DRIVE_FOLDER_ID
-    )
-
-    # Убираем полностью пустые документы
-    documents = [
-        document
-        for document in documents
-        if document["text"].strip()
-    ]
-
-    # Даём каждому документу внутренний ID
-    for index, document in enumerate(
-        documents
-    ):
-        document["assistant_id"] = index
-
-    documents_cache = documents
-
-    # Строим поисковые chunks
-    chunks = []
-
-    for document in documents:
-
-        document_chunks = split_into_chunks(
-            document["text"]
-        )
-
-        for chunk in document_chunks:
-
-            chunks.append(
-                {
-                    "text": chunk,
-                    "name": document["name"],
-                    "url": document["url"],
-                    "folder_path": document["folder_path"],
-                    "tier": get_source_tier(
-                        document["name"],
-                        document["folder_path"],
-                    ),
-                    "assistant_id": document[
-                        "assistant_id"
-                    ],
-                }
+        if (
+            documents_cache is not None
+            and not force
+        ):
+            return (
+                len(documents_cache),
+                len(chunks_cache),
             )
 
-    chunks_cache = chunks
+        print(
+            "📚 Загружаю материалы BilimBiz..."
+        )
 
-    print(
-        f"✅ Загружено документов: "
-        f"{len(documents_cache)}"
-    )
+        documents = load_folder(
+            DRIVE_FOLDER_ID
+        )
 
-    print(
-        f"✅ Поисковых фрагментов: "
-        f"{len(chunks_cache)}"
-    )
+        # Не сохраняем пустые документы
+        documents = [
+            document
+            for document in documents
+            if document["text"].strip()
+        ]
+
+        # Используем постоянный Google Drive ID
+        for document in documents:
+            document["assistant_id"] = (
+                document["id"]
+            )
+
+        new_chunks = []
+
+        for document in documents:
+
+            document_chunks = split_into_chunks(
+                document["text"]
+            )
+
+            for chunk in document_chunks:
+
+                new_chunks.append(
+                    {
+                        "text": chunk,
+                        "name": document["name"],
+                        "url": document["url"],
+                        "folder_path": document[
+                            "folder_path"
+                        ],
+                        "tier": get_source_tier(
+                            document["name"],
+                            document["folder_path"],
+                        ),
+                        "assistant_id": document[
+                            "assistant_id"
+                        ],
+                    }
+                )
+
+        # Старый cache остаётся доступным,
+        # пока новый полностью не готов.
+        documents_cache = documents
+        chunks_cache = new_chunks
+
+        print(
+            f"✅ Загружено документов: "
+            f"{len(documents_cache)}"
+        )
+
+        print(
+            f"✅ Поисковых фрагментов: "
+            f"{len(chunks_cache)}"
+        )
+
+        return (
+            len(documents_cache),
+            len(chunks_cache),
+        )
 
 
 async def ensure_data_loaded():
@@ -233,6 +250,42 @@ async def ensure_data_loaded():
             load_assistant_data
         )
 
+
+def auto_refresh_kb(interval_seconds=3600):
+    """
+    Автоматически перечитывает Google Drive.
+
+    3600 секунд = 60 минут.
+    """
+
+    while True:
+
+        time.sleep(
+            interval_seconds
+        )
+
+        try:
+            print(
+                "🔄 Автоматически обновляю "
+                "BilimBiz Knowledge Base..."
+            )
+
+            load_assistant_data(
+                force=True
+            )
+
+            print(
+                "✅ Автоматическое обновление "
+                "Knowledge Base завершено."
+            )
+
+        except Exception as error:
+
+            print(
+                "❌ Ошибка автоматического "
+                "обновления KB:",
+                repr(error),
+            )
 
 # --------------------------------------------------
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -781,12 +834,10 @@ async def open_document(
     query = update.callback_query
     await query.answer()
 
-    document_id = int(
-        query.data.split(
-            ":",
-            1,
-        )[1]
-    )
+    document_id = query.data.split(
+    ":",
+    1,
+    )[1]
 
     document = get_document_by_id(
         document_id
@@ -1153,10 +1204,6 @@ async def cancel_assistant(
 
     return ConversationHandler.END
 
-
-# --------------------------------------------------
-# HANDLER
-# --------------------------------------------------
 
 async def handle_stale_assistant_button(
     update: Update,
