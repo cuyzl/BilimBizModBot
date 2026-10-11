@@ -1218,14 +1218,14 @@ async def handle_question(
         await update.message.reply_text(
             "Я не нашёл достаточно подходящих "
             "материалов в базе BilimBiz.\n\n"
-            "Попробуйте переформулировать вопрос."
-            "или оставьте тему команде BilimBiz, "
-            "если нужного материала пока нет.",
+            "Попробуйте переформулировать вопрос. "
+            "Если нужной темы пока нет в базе, "
+            "вы можете предложить её команде BilimBiz.",
             reply_markup=InlineKeyboardMarkup(
                 [
                     [
                         InlineKeyboardButton(
-                            "💬 Оставить тему или вопрос",
+                            "💬 Предложить тему",
                             callback_data="ask_team_question",
                         )
                     ],
@@ -1237,7 +1237,7 @@ async def handle_question(
                     ],
                     [
                         InlineKeyboardButton(
-                            "🏠 К темам",
+                            "🏠 Все темы",
                             callback_data="back_topics",
                         )
                     ]
