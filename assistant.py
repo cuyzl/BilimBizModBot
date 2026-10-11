@@ -24,9 +24,9 @@ from knowledge_search import (
     get_source_tier,
     search_knowledge_base,
 )
+from questions_sheet import save_question
 
-
-GRADE, TOPIC, TOPIC_MENU, QUESTION = range(4)
+GRADE, TOPIC, TOPIC_MENU, QUESTION, TEAM_QUESTION = range(5)
 
 
 # --------------------------------------------------
@@ -542,9 +542,18 @@ def build_topic_menu(topic):
 
     rows.append(
         [
+        InlineKeyboardButton(
+            "🔎 Найти материал по вопросу",
+            callback_data="ask_question",
+            )
+        ]
+    )
+
+    rows.append(
+        [
             InlineKeyboardButton(
-                "🔎 У меня есть вопрос",
-                callback_data="ask_question",
+                "💬 Не нашли нужную тему?",
+                callback_data="ask_team_question",
             )
         ]
     )
@@ -984,6 +993,135 @@ async def back_to_topics(
 
     return TOPIC
 
+# --------------------------------------------------
+# НЕ НАШЛИ НУЖНУЮ ТЕМУ
+# --------------------------------------------------
+
+
+async def ask_team_question(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+    await query.answer()
+
+    await query.edit_message_text(
+        "💬 Не нашли нужную тему или материал?\n\n"
+        "Напишите, чего вам не хватило в базе BilimBiz. "
+        "Это может быть вопрос, тема для нового материала "
+        "или то, что вы хотели бы увидеть подробнее.\n\n"
+        "Мы сохраним ваше сообщение, чтобы команда могла "
+        "рассмотреть его и дополнить базу.",
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "⬅️ Назад к разделу",
+                        callback_data="back_topic_menu",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🏠 Все темы",
+                        callback_data="back_topics",
+                    )
+                ],
+            ]
+        ),
+    )
+
+    return TEAM_QUESTION
+
+
+async def handle_team_question(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    message_text = update.message.text.strip()
+
+    if not message_text:
+        return TEAM_QUESTION
+
+    user = update.effective_user
+
+    grade = context.user_data.get(
+        "grade",
+        "",
+    )
+
+    if grade == "other":
+        grade_text = "Не учусь в школе"
+    elif grade:
+        grade_text = f"{grade} класс"
+    else:
+        grade_text = ""
+
+    topic_key = context.user_data.get(
+        "topic"
+    )
+
+    topic_info = TOPICS.get(
+        topic_key,
+        {},
+    )
+
+    topic_name = topic_info.get(
+        "name",
+        "Другое",
+    )
+
+    waiting_message = (
+        await update.message.reply_text(
+            "⏳ Сохраняю ваше сообщение..."
+        )
+    )
+
+    try:
+        await asyncio.to_thread(
+            save_question,
+            telegram_user_id=user.id,
+            username=user.username,
+            grade=grade_text,
+            topic=topic_name,
+            question=message_text,
+        )
+
+    except Exception as error:
+        print(
+            "❌ Ошибка сохранения сообщения:",
+            repr(error),
+        )
+
+        await waiting_message.edit_text(
+            "❌ Не получилось сохранить сообщение.\n\n"
+            "Попробуйте ещё раз чуть позже."
+        )
+
+        return TEAM_QUESTION
+
+    await waiting_message.edit_text(
+        "✅ Спасибо! Мы сохранили ваше сообщение.\n\n"
+        "Команда BilimBiz сможет рассмотреть его "
+        "и использовать, чтобы дополнить базу.",
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "⬅️ Назад к разделу",
+                        callback_data="back_topic_menu",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🏠 Все темы",
+                        callback_data="back_topics",
+                    )
+                ],
+            ]
+        ),
+    )
+
+    return TOPIC_MENU
 
 # --------------------------------------------------
 # СВОБОДНЫЙ ВОПРОС
@@ -1002,7 +1140,7 @@ async def ask_question(
         "• когда лучше сдавать SAT?\n"
         "• как отправить результаты?\n"
         "• где найти бесплатные ресурсы?\n\n"
-        "Я не буду придумывать ответ — "
+        "Я не буду придумывать ответ, "
         "я покажу подходящие материалы BilimBiz."
     )
 
@@ -1080,21 +1218,33 @@ async def handle_question(
         await update.message.reply_text(
             "Я не нашёл достаточно подходящих "
             "материалов в базе BilimBiz.\n\n"
-            "Попробуйте переформулировать вопрос.",
+            "Попробуйте переформулировать вопрос."
+            "или оставьте тему команде BilimBiz, "
+            "если нужного материала пока нет.",
             reply_markup=InlineKeyboardMarkup(
                 [
                     [
                         InlineKeyboardButton(
-                            "⬅️ К темам",
-                            callback_data=(
-                                "back_topics"
-                            ),
+                            "💬 Оставить тему или вопрос",
+                            callback_data="ask_team_question",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "🔎 Попробовать ещё раз",
+                            callback_data="ask_question",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "🏠 К темам",
+                            callback_data="back_topics",
                         )
                     ]
-                ]
+                ],
             ),
         )
-
+        
         return QUESTION
 
     lines = [
@@ -1260,6 +1410,11 @@ def get_assistant_handler():
                 ),
 
                 CallbackQueryHandler(
+                    ask_team_question,
+                    pattern=r"^ask_team_question$",
+            ),
+
+                CallbackQueryHandler(
                     back_to_topic_menu,
                     pattern=r"^back_topic_menu$",
                 ),
@@ -1284,6 +1439,11 @@ def get_assistant_handler():
                 ),
 
                 CallbackQueryHandler(
+                    ask_team_question,
+                    pattern=r"^ask_team_question$",
+                ),
+
+                CallbackQueryHandler(
                     back_to_topic_menu,
                     pattern=r"^back_topic_menu$",
                 ),
@@ -1293,6 +1453,25 @@ def get_assistant_handler():
                     pattern=r"^back_topics$",
                 ),
             ],
+
+            TEAM_QUESTION: [
+                MessageHandler(
+                    filters.ChatType.PRIVATE
+                    & filters.TEXT
+                    & ~filters.COMMAND,
+                    handle_team_question,
+                ),
+
+                CallbackQueryHandler(
+                     back_to_topic_menu,
+                     pattern=r"^back_topic_menu$",
+                ),
+
+                CallbackQueryHandler(
+                    back_to_topics,
+                     pattern=r"^back_topics$",
+                ),
+            ], 
         },
 
         fallbacks=[

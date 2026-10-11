@@ -355,8 +355,9 @@ def main():
      CallbackQueryHandler(
          handle_stale_assistant_button,
             pattern=(
-              r"^(grade:|topic:|category:|doc:|"
-             r"ask_question$|back_topic_menu$|back_topics$)"
+                r"^(grade:|topic:|category:|doc:|"
+                r"ask_question$|ask_team_question$|"
+                r"back_topic_menu$|back_topics$)"
             ),
         )
     )
