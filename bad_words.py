@@ -1,10 +1,16 @@
 import os
+import re
+
 from better_profanity import profanity
 
 
 RU_BAD = set()
 if os.path.exists("ru_bad_words.txt"):
-    with open("ru_bad_words.txt", "r", encoding="utf-8") as f:
+    with open(
+        "ru_bad_words.txt",
+        "r",
+        encoding="utf-8",
+    ) as f:
         RU_BAD = {
             line.strip().lower()
             for line in f
@@ -14,7 +20,11 @@ if os.path.exists("ru_bad_words.txt"):
 
 KZ_BAD = set()
 if os.path.exists("kz_bad_words.txt"):
-    with open("kz_bad_words.txt", "r", encoding="utf-8") as f:
+    with open(
+        "kz_bad_words.txt",
+        "r",
+        encoding="utf-8",
+    ) as f:
         KZ_BAD = {
             line.strip().lower()
             for line in f
@@ -25,17 +35,31 @@ if os.path.exists("kz_bad_words.txt"):
 ALL_BAD = RU_BAD | KZ_BAD
 
 
-def contains_bad_words(text: str) -> bool:
+def find_bad_word(text: str):
     if not text:
-        return False
+        return None
 
     text_lower = text.lower()
 
     for word in ALL_BAD:
-        if word in text_lower:
-            return True
+        pattern = (
+            rf"(?<!\w)"
+            rf"{re.escape(word)}"
+            rf"(?!\w)"
+        )
+
+        if re.search(
+            pattern,
+            text_lower,
+            flags=re.UNICODE,
+        ):
+            return word
 
     if profanity.contains_profanity(text):
-        return True
+        return "better_profanity"
 
-    return False
+    return None
+
+
+def contains_bad_words(text: str) -> bool:
+    return find_bad_word(text) is not None

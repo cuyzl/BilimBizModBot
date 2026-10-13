@@ -1,6 +1,11 @@
 import threading
 from datetime import datetime, timedelta, timezone
 
+from bad_words import (
+    contains_bad_words,
+    find_bad_word,
+)
+
 from assistant import (
     get_assistant_handler,
     load_assistant_data,
@@ -137,6 +142,13 @@ async def moderate_message(
     if not text:
         return
 
+    if message.is_automatic_forward:
+        print(
+            "Пропущен автоматический пост "
+            "из связанного канала ✅"
+        )
+        return
+
     print("Получено сообщение:", repr(text))
 
     # ---------------------------------------
@@ -166,6 +178,13 @@ async def moderate_message(
     # ---------------------------------------
 
     has_bad_words = contains_bad_words(text)
+    
+    if has_bad_words:
+        print(
+            "🚨 Найдено как мат:",
+            find_bad_word(text),
+        )
+
     has_blocked_link = contains_blocked_link(text)
 
     # Админы могут отправлять любые ссылки
